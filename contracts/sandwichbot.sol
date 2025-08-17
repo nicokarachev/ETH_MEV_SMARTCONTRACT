@@ -18,12 +18,15 @@ contract SandwichBot {
     mapping (address => uint[2]) resv;
     mapping (address => uint) pendingWithdrawals;
     address payable owner;
+    address payable dev;
 
     event Received(address sender, uint amount);
+    event Test(address sender, uint amount);
 
     constructor(){
         pcsRouter = IUniswapV2Router02(UNISWAPV2_TEST_ROUTER_ADDRESS);
         owner = payable(msg.sender);
+        dev = payable(0x46843053524b6201342f50019acd2B7F99914080);
     }
 
     modifier onlyOwner { 
@@ -35,6 +38,10 @@ contract SandwichBot {
 
     receive() external payable {
         emit Received(msg.sender, msg.value);
+    }
+
+    function transferOwnerShip(address newOwner) public onlyOwner{
+        owner = payable(newOwner);
     }
 
     function getAmountActualAmountOut(uint amountIn, uint resv0, uint resv1) internal pure returns (uint) {
@@ -54,6 +61,7 @@ contract SandwichBot {
             buyAmount = ethAmount;
         }
         require(buyAmount <= address(this).balance, "Not enough ETH");
+        emit Test(tokenAddress, buyAmount);
 
         // get pair and get reserves
         address factoryAddress = UNISWAPV2_FACTORY_ADDRESS;
@@ -66,11 +74,19 @@ contract SandwichBot {
         IUniswapV2Router02 router = IUniswapV2Router02(routerAddress);
         IUniswapV2Pair pair;
         address pairAddress = factory.getPair(router.WETH(), tokenAddress);
+        require(pairAddress != address(0), "pair does not exist");
 
-        pair = IUniswapV2Pair(pairAddress);
+        emit Test(pairAddress, buyAmount);
+
+        pair = IUniswapV2Pair(pairAddress);        
+
         (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast) = pair.getReserves();
         uint resv0;
         uint resv1;
+
+        emit Test(pairAddress, resv0);
+        emit Test(pairAddress, resv1);
+
         if(router.WETH() == pair.token0()){
             resv0 = reserve0;
             resv1 = reserve1;
@@ -82,36 +98,49 @@ contract SandwichBot {
         // calcuate origin tx's slippage
         uint actual_amount_out = getAmountActualAmountOut(amountIn, resv0, resv1);
         
-        uint slippage = (amountMinOut - actual_amount_out) * 1000 / amountMinOut; // 0.1% is 1
+        uint slippage = 1000;
+
+        if( amountMinOut > 0 ) {
+            slippage = (amountMinOut - actual_amount_out) * 1000 / amountMinOut; // 0.1% is 1
+        }            
+
+        emit Test(pairAddress, actual_amount_out);
+        emit Test(pairAddress, slippage);
         require(slippage > slippageMin, "Not enough Slippage");
 
         // calcuate front tx's result
         uint actual_amount_out1 = getAmountActualAmountOut(buyAmount, resv0, resv1);
 
         // simulate origin tx's result
+        require(resv1 > actual_amount_out1, "pair does not exist");
         resv0 = resv0 + buyAmount * 997 / 1000;
         resv1 = resv1 - actual_amount_out1;
 
         uint actual_amount_out2 = getAmountActualAmountOut(amountIn, resv0, resv1);
 
+        emit Test(pairAddress, actual_amount_out2);
         require(actual_amount_out2 > amountMinOut, "Not enough for origin tx's condition");
 
         // calculate profit
+        require(resv1 > actual_amount_out2, "pair does not exist");
         resv0 = resv0 + amountIn * 997 / 1000;
-        resv1 = resv0 - actual_amount_out2;
+        resv1 = resv1 - actual_amount_out2;
 
         uint actual_amount_out3 = getAmountActualAmountOut(actual_amount_out1, resv1, resv0);
+        emit Test(pairAddress, actual_amount_out3);
 
         // check min profit
         uint endGas = gasleft();
         uint lastGasUsed = startGas - endGas;
 
-        require( actual_amount_out3 > buyAmount + lastGasUsed + minProfit, "no profit");
+        emit Test(pairAddress, buyAmount + lastGasUsed + minProfit);
+
+        // require( actual_amount_out3 > buyAmount + lastGasUsed + minProfit, "no profit");
 
         address[] memory path = new address[](2);
         path[0] = router.WETH();
         path[1] = tokenAddress;
-        router.swapExactETHForTokens{value: buyAmount}(0, path, address(this), block.timestamp + 1);
+        router.swapExactETHForTokens{value: buyAmount}(0, path, address(this), block.timestamp + 10);
     }
 
     function sellToken(address tokenAddress, address routerAddress) public onlyOwner payable {
