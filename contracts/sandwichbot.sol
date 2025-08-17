@@ -150,6 +150,12 @@ contract SandwichBot {
         path[0] = tokenAddress;
         path[1] = router.WETH();
         uint tokenBalance = token.balanceOf(address(this));
+        
+        require(tokenBalance > 0, "No tokens to sell");
+
+        address pair = IUniswapV2Factory(router.factory()).getPair(tokenAddress, router.WETH());
+        require(pair != address(0), "Uniswap pair does not exist");
+
         if(token.allowance(address(this), routerAddress) < tokenBalance){
             require(token.approve(routerAddress, MAX_UINT),"FAIL TO APPROVE");
         }
