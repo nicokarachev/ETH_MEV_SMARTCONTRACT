@@ -8,10 +8,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract SandwichBot {
 
-    address internal constant UNISWAPV2_TEST_ROUTER_ADDRESS = 0x9Ac64Cc6e4415144C455BD8E4837Fea55603e5c3;
-    address internal constant UNISWAPV2_TEST_FACTORY_ADDRESS = 0xB7926C0430Afb07AA7DEfDE6DA862aE0Bde767bc;
-    address internal constant UNISWAPV2_ROUTER_ADDRESS = 0x10ED43C718714eb63d5aA57B78B54704E256024E;
-    address internal constant UNISWAPV2_FACTORY_ADDRESS = 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
+    address internal constant UNISWAPV2_TEST_ROUTER_ADDRESS = 0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3;
+    address internal constant UNISWAPV2_TEST_FACTORY_ADDRESS = 0xF62c03E08ada871A0bEb309762E260a7a6a880E6;
+    address internal constant UNISWAPV2_ROUTER_ADDRESS = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+    address internal constant UNISWAPV2_FACTORY_ADDRESS = 0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f;
 
     IUniswapV2Router02 public pcsRouter;
     uint constant MAX_UINT = 2**256 - 1;
@@ -37,43 +37,8 @@ contract SandwichBot {
         emit Received(msg.sender, msg.value);
     }
 
-    function getReserves(address[] memory tokenAddress, address[] memory routerAddress) public view returns(uint[] memory resv0, uint[] memory resv1){
-        uint[] memory resv0 = new uint[](tokenAddress.length);
-        uint[] memory resv1 = new uint[](tokenAddress.length);
-        uint resv_0;
-        uint resv_1;
-        for(uint i=0;i<tokenAddress.length;i++){
-            (resv_0, resv_1) = getReserve(tokenAddress[i], routerAddress[i]);
-            resv0[i] = resv_0;
-            resv1[i] = resv_1;
-        }
-        return (resv0,resv1);
-    }
-
-    function getReserve(address tokenAddress, address routerAddress) public view returns(uint resv0, uint resv1){
-        address factoryAddress = UNISWAPV2_FACTORY_ADDRESS;
-
-        if( routerAddress == UNISWAPV2_TEST_ROUTER_ADDRESS ){
-            factoryAddress = UNISWAPV2_TEST_FACTORY_ADDRESS;
-        }
-        IUniswapV2Factory factory = IUniswapV2Factory(factoryAddress);
-        IUniswapV2Router02 router = IUniswapV2Router02(routerAddress);
-        IUniswapV2Pair pair;
-        address pairAddress = factory.getPair(router.WETH(), tokenAddress);
-        pair = IUniswapV2Pair(pairAddress);
-        (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast) = pair.getReserves();
-        uint resv0;
-        uint resv1;
-        if(router.WETH() == pair.token0()){
-            resv0 = reserve0;
-            resv1 = reserve1;
-        }
-        else
-        {
-            resv0 = reserve1;
-            resv1 = reserve0;
-        }
-        return (resv0, resv1);
+    function getAmountActualAmountOut(uint amountIn, uint resv0, uint resv1) internal pure returns (uint) {
+        return amountIn * 997 * resv1 / (resv0 * 1000 + amountIn * 997);
     }
 
     function buyToken(uint ethAmount, address tokenAddress, address routerAddress, uint amountIn, uint amountMinOut, uint slippageMin, uint minProfit) public payable onlyOwner {
@@ -109,53 +74,39 @@ contract SandwichBot {
         if(router.WETH() == pair.token0()){
             resv0 = reserve0;
             resv1 = reserve1;
-        }
-        else
-        {
+        } else {
             resv0 = reserve1;
             resv1 = reserve0;
         }
 
         // calcuate origin tx's slippage
-        uint amount_in_with_fee = amountIn * 997 / 1000;
-        uint numerator = amount_in_with_fee * resv1;
-        uint denominator = resv0 + amount_in_with_fee;
-        uint actual_amount_out = numerator / denominator;
+        uint actual_amount_out = getAmountActualAmountOut(amountIn, resv0, resv1);
         
         uint slippage = (amountMinOut - actual_amount_out) * 1000 / amountMinOut; // 0.1% is 1
         require(slippage > slippageMin, "Not enough Slippage");
 
         // calcuate front tx's result
-        uint amount_in_with_fee1 = buyAmount * 997 / 1000;
-        uint numerator1 = amount_in_with_fee1 * resv1;
-        uint denominator1 = resv0 + amount_in_with_fee1;
-        uint actual_amount_out1 = numerator1 / denominator1;
+        uint actual_amount_out1 = getAmountActualAmountOut(buyAmount, resv0, resv1);
 
         // simulate origin tx's result
-        resv0 = resv0 + amount_in_with_fee1;
+        resv0 = resv0 + buyAmount * 997 / 1000;
         resv1 = resv1 - actual_amount_out1;
 
-        uint amount_in_with_fee2 = amountIn * 997 / 1000;
-        uint numerator2 = amount_in_with_fee2 * resv1;
-        uint denominator2 = resv0 + amount_in_with_fee2;
-        uint actual_amount_out2 = numerator2 / denominator2;
+        uint actual_amount_out2 = getAmountActualAmountOut(amountIn, resv0, resv1);
 
         require(actual_amount_out2 > amountMinOut, "Not enough for origin tx's condition");
 
         // calculate profit
-        resv0 = resv0 + amount_in_with_fee2;
+        resv0 = resv0 + amountIn * 997 / 1000;
         resv1 = resv0 - actual_amount_out2;
 
-        uint amount_in_with_fee3 = actual_amount_out1 * 997 / 1000;
-        uint numerator3 = amount_in_with_fee3 * resv0;
-        uint denominator3 = resv1 + amount_in_with_fee3;
-        uint actual_amount_out3 = numerator3 / denominator3;
+        uint actual_amount_out3 = getAmountActualAmountOut(actual_amount_out1, resv1, resv0);
 
         // check min profit
         uint endGas = gasleft();
         uint lastGasUsed = startGas - endGas;
 
-        require( actual_amount_out3 > buyAmount + lastGasUsed, "no profit");
+        require( actual_amount_out3 > buyAmount + lastGasUsed + minProfit, "no profit");
 
         address[] memory path = new address[](2);
         path[0] = router.WETH();
